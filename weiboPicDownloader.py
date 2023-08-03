@@ -234,25 +234,25 @@ def get_resources(uid, video, interval, limit, token):
             for card in cards:
                 if 'mblog' in card:
                     mblog = card['mblog']
-
                     # We check if a post is sticky. Sticky post will NOT be used to when see if we have reached the limit or not;
                     # but will still be processed if within the interval.
                     is_top = False
-                    if 'isTop' in mblog and mblog['isTop']: is_top = True
-                    if 'mblogtype' in mblog and mblog['mblogtype'] == 2: is_top = True
+                    if mblog.get('isTop', False): is_top = True
+                    if mblog.get('mblogtype', None) == 2: is_top = True
 
                     mid = int(mblog['mid'])
+                    bid = mblog['bid']
                     date = parse_date(mblog['created_at'])
                     if 'raw_text' in mblog:
                         text = mblog['raw_text']
                     else:
                         text = mblog['text']
-                    mark = {'uid': uid, 'mid': mid, 'bid': mblog['bid'], 'date': date, 'text': text}
+                    mark = {'uid': uid, 'mid': mid, 'bid': bid, 'date': date, 'text': text}
                     # Try to get username again
                     if 'screen_name' not in info and str(mblog['user']['id']) == uid:
                         info['screen_name'] = mblog['user']['screen_name']
                     if not is_top and 'newest_bid' not in info: #Save newest bid
-                        info['newest_bid'] = mblog['bid']
+                        info['newest_bid'] = bid
 
                     if not is_top and compare(limit[0], '>=', [mid, date]): exceed = True
                     if compare(limit[0], '>=', [mid, date]) or compare(limit[1], '<', [mid, date]): continue
@@ -260,11 +260,11 @@ def get_resources(uid, video, interval, limit, token):
                     if 'pics' in mblog:
                         if mblog['pic_num'] > 9:  # More than 9 images
                             blog_url = card['scheme']
-                            print_fit(f'Find more than 9 pictures for {blog_url}')
+                            print_fit(f'[Info] Find more than 9 pictures for {blog_url}')
                             with request_fit('GET', blog_url, cookie=token) as r:
                                 m = re.search(r'var \$render_data = \[(.+)\]\[0\] \|\| {};', r.text, flags=re.DOTALL)
                                 if not m:
-                                    print_fit('[E] Cannot parse post. Try to set cookie uisng `-c`.')
+                                    print_fit('[Error] Cannot parse post. Try to set cookie uisng `-c`.')
                                 else:
                                     my_json = json.loads(m[1])
                                     pics = my_json['status']['pics']
@@ -273,15 +273,43 @@ def get_resources(uid, video, interval, limit, token):
                         for index, pic in enumerate(pics, 1):
                             if 'large' in pic:
                                 resources.append(merge({'url': pic['large']['url'], 'index': index, 'type': 'photo'}, mark))
-                    elif 'page_info' in mblog and video:
-                        keys = ["mp4_720p_mp4", "stream_url_hd", "mp4_hd_mp4", "stream_url", "mp4_ld_mp4"]
-                        media_info = mblog["page_info"].get("media_info", {})
-                        urls = mblog["page_info"].get("urls", {})
-                        combined = {**media_info, **urls}
-                        for key in keys:
-                            if key in combined:
-                                resources.append(merge({'url': combined[key], 'index': 1, 'type': 'video'}, mark))
-                                break
+                    elif video and 'page_info' in mblog:
+                        video_url = None
+                        # try to get 1080p video from another API endpoint
+                        try:
+                            url2 = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
+                            print_fit(f'[Info] Try to get potentially higher quality video from {url2}')
+                            with request_fit('GET', url2, cookie = token) as r:
+                                ajax_data = r.json()
+                                videos = [(
+                                    playback['play_info']["width"],
+                                    playback['play_info']["height"],
+                                    playback['play_info']["bitrate"],
+                                    playback['play_info']["url"]
+                                ) for playback in ajax_data["page_info"]["media_info"]["playback_list"]
+                                    if playback['play_info']["mime"] == "video/mp4" # filter out thumbnails
+                                ]
+                                if videos:
+                                    videos.sort(reverse=True)
+                                    best = videos[0]
+                                    video_url = best[3]
+                                    print(f'[Info] best video: {best[0]}x{best[1]}, {best[2]/1024:.0f}kbps')
+                        except Exception as e:
+                            print_fit(f'[Warning] failed to get higher quality video: {e}')
+
+                        if not video_url:
+                            keys = ["mp4_720p_mp4", "stream_url_hd", "mp4_hd_mp4", "stream_url", "mp4_ld_mp4"]
+                            media_info = mblog["page_info"].get("media_info", {})
+                            urls = mblog["page_info"].get("urls", {})
+                            combined = {**media_info, **urls}
+                            for key in keys:
+                                if key in combined:
+                                    video_url = combined[key]
+                                    break
+                        if video_url:
+                            resources.append(merge({'url': video_url, 'index': 1, 'type': 'video'}, mark))
+                        else:
+                            print_fit(f'[Error] Cannot get video url for {bid}')
 
             print_fit('{} {}(#{})'.format('Analysing weibos...' if empty < aware and not exceed else 'Finish analysis', progress(amount, total), page), pin = True)
             page += 1
