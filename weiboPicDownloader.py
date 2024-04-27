@@ -28,18 +28,21 @@ except:
 
 parser = argparse.ArgumentParser(prog='weiboPicDownloader')
 group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument('-', metavar='user', dest='users', nargs='+', help='specify nickname or id of weibo users')
+group.add_argument('-u', metavar='user', dest='users', nargs='+', help='specify nickname or id of weibo users')
 group.add_argument('-f', metavar='file', dest='files', nargs='+', help='import list of users from files')
 parser.add_argument('-d', metavar='directory', dest='directory', help='set picture saving path')
-parser.add_argument('-s', metavar='size', dest='size',    default=20, type=int,    help='set size of thread pool')
-parser.add_argument('-r', metavar='retry', dest='retry',    default=10, type=int,    help='set maximum number of retries')
-parser.add_argument('-i', metavar='interval', dest='interval',    default=1, type=float,    help='set interval for feed requests')
-parser.add_argument('-c', metavar='cookie', dest='cookie',    help='set cookie if needed')
-parser.add_argument('-b', metavar='boundary', dest='boundary',    default=':',    help='focus on weibos in the id range')
-parser.add_argument('-R', metavar='resource', dest='resource',    help='use dumped resource')
+parser.add_argument('-s', metavar='size', dest='size', default=20, type=int, help='set size of thread pool')
+parser.add_argument('-r', metavar='retry', dest='retry', default=10, type=int, help='set maximum number of retries')
+parser.add_argument('-i', metavar='interval', dest='interval', default=1, type=float, help='set interval for feed requests')
+parser.add_argument('-c', metavar='cookie', dest='cookie', help='set cookie if needed')
+parser.add_argument('-b', metavar='boundary', dest='boundary', default=':', help='focus on weibos in the id range')
+parser.add_argument('-R', metavar='resource', dest='resource', help='use dumped resource')
 parser.add_argument('-n', metavar='name', dest='name', default='{name}',    help='customize naming format')
-parser.add_argument('-v', dest='video', action='store_true',    help='download videos together')
-parser.add_argument('-o', dest='overwrite', action='store_true',    help='overwrite existing files')
+parser.add_argument('-v', dest='video', action='store_true', help='download videos together')
+parser.add_argument('-o', dest='overwrite', action='store_true', help='overwrite existing files')
+
+session = requests.Session()
+session_visitor = None
 
 def nargs_fit(parser, args):
     flags = parser._option_string_actions
@@ -102,13 +105,6 @@ def progress(part, whole, percent = False):
     else:
         return '{}/{}'.format(part, whole)
 
-def request_fit(method, url, max_retry = 0, cookie = None, stream = False):
-    headers = {
-        # 'User-Agent': 'Mozilla/5.0 (Linux; Android 9; Pixel 3 XL) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.80 Mobile Safari/537.36',
-        'Cookie': cookie
-    }
-    return requests.request(method, url, headers = headers, stream = stream, verify = False)
-
 def read_from_file(path):
     try:
         with open(path, 'r') as f:
@@ -116,17 +112,17 @@ def read_from_file(path):
     except Exception as e:
         quit(str(e))
 
-def nickname_to_uid(nickname, token):
+def nickname_to_uid(nickname):
     url = 'https://m.weibo.cn/n/{}'.format(nickname)
-    response = request_fit('GET', url, cookie = token)
+    response = session.get(url)
     if re.search(r'/u/\d{10}$', response.url):
         return response.url[-10:]
     else:
         return
 
-def uid_to_nickname(uid, token):
+def uid_to_nickname(uid):
     url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value={}'.format(uid)
-    response = request_fit('GET', url, cookie = token)
+    response = session.get(url)
     try:
         return json.loads(response.text)['data']['userInfo']['screen_name']
     except:
@@ -170,7 +166,38 @@ def compare(standard, operation, candidate):
         except TypeError:
             pass
 
-def get_resources(uid, video, interval, limit, token):
+def get_hd_video(bid):
+    global session_visitor
+    if session_visitor is None:
+        print('[Info] Initialize a visitor session to use /statuses API endpoint to get higher quality video.')
+        session_visitor = requests.Session()
+        DATA = {
+            'cb': 'visitor_gray_callback',
+            'tid': '',
+            'from': 'weibo'
+        }
+        session_visitor.post('https://passport.weibo.com/visitor/genvisitor2', data=DATA)
+
+    url = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
+    print_fit(f'[Info] Try to get potentially higher quality video from {url}')
+    with session_visitor.get(url) as r:
+        ajax_data = r.json()
+        videos = [(
+            playback['play_info']["width"],
+            playback['play_info']["height"],
+            playback['play_info']["bitrate"],
+            playback['play_info']["url"]
+        ) for playback in ajax_data["page_info"]["media_info"]["playback_list"]
+            if playback['play_info']["mime"] == "video/mp4" # filter out thumbnails
+        ]
+        if videos:
+            videos.sort(reverse=True)
+            best = videos[0]
+            video_url = best[3]
+            print(f'[Info] best video: {best[0]}x{best[1]}, {best[2]/1024:.0f}kbps')
+            return video_url
+
+def get_resources(uid, video, interval, limit):
     page = 1
     size = 25
     amount = 0
@@ -185,7 +212,7 @@ def get_resources(uid, video, interval, limit, token):
     while empty < aware and not exceed:
         try:
             url = 'https://m.weibo.cn/api/container/getIndex?count={}&page={}&containerid=107603{}'.format(size, page, uid)
-            response = request_fit('GET', url, cookie = token)
+            response = session.get(url)
             assert response.status_code != 418
             json_data = json.loads(response.text)
         except AssertionError:
@@ -229,7 +256,7 @@ def get_resources(uid, video, interval, limit, token):
                         if mblog['pic_num'] > 9:  # More than 9 images
                             blog_url = card['scheme']
                             print_fit(f'[Info] Find more than 9 pictures for {blog_url}')
-                            with request_fit('GET', blog_url, cookie=token) as r:
+                            with session.get(blog_url) as r:
                                 m = re.search(r'var \$render_data = \[(.+)\]\[0\] \|\| {};', r.text, flags=re.DOTALL)
                                 if not m:
                                     print_fit('[Error] Cannot parse post. Try to set cookie uisng `-c`.')
@@ -245,26 +272,10 @@ def get_resources(uid, video, interval, limit, token):
                         video_url = None
                         # try to get 1080p video from another API endpoint
                         try:
-                            url2 = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
-                            print_fit(f'[Info] Try to get potentially higher quality video from {url2}')
-                            with request_fit('GET', url2, cookie = token) as r:
-                                ajax_data = r.json()
-                                videos = [(
-                                    playback['play_info']["width"],
-                                    playback['play_info']["height"],
-                                    playback['play_info']["bitrate"],
-                                    playback['play_info']["url"]
-                                ) for playback in ajax_data["page_info"]["media_info"]["playback_list"]
-                                    if playback['play_info']["mime"] == "video/mp4" # filter out thumbnails
-                                ]
-                                if videos:
-                                    videos.sort(reverse=True)
-                                    best = videos[0]
-                                    video_url = best[3]
-                                    print(f'[Info] best video: {best[0]}x{best[1]}, {best[2]/1024:.0f}kbps')
+                            video_url = get_hd_video(bid)
                         except Exception as e:
                             print_fit(f'[Warning] failed to get higher quality video: {e}')
-
+                        # if failed, try to get video from the original API endpoint, which only has up to 720p
                         if not video_url:
                             keys = ["mp4_720p_mp4", "stream_url_hd", "mp4_hd_mp4", "stream_url", "mp4_ld_mp4"]
                             media_info = mblog["page_info"].get("media_info", {})
@@ -329,7 +340,7 @@ def download(url, path, overwrite):
     if path.exists() and not overwrite:
         return True
     try:
-        with request_fit('GET', url, stream = True) as response:
+        with session.get(url, stream=True) as response:
             expected_size = int(response.headers['Content-length'])
             assert expected_size > 0 and response.status_code == 200
             with open(path, 'wb') as f:
@@ -354,7 +365,6 @@ def download(url, path, overwrite):
         return False
     else:
         return True
-
 
 def main(*paras):
     if paras:
@@ -402,7 +412,8 @@ def main(*paras):
     except:
         quit('invalid id range {}'.format(args.boundary))
 
-    token = 'SUB={}'.format(args.cookie) if args.cookie else None
+    if args.cookie:
+        session.cookies.update({'SUB': args.cookie})
     pool = concurrent.futures.ThreadPoolExecutor(max_workers = args.size)
 
     results = []
@@ -412,11 +423,11 @@ def main(*paras):
         print_fit('{}/{} {}'.format(number, len(users), time.ctime()))
 
         if re.search(r'^\d{10}$', user):
-            nickname = uid_to_nickname(user, token)
+            nickname = uid_to_nickname(user)
             uid = user
         else:
             nickname = user
-            uid = nickname_to_uid(user, token)
+            uid = nickname_to_uid(user)
 
         if not uid:
             print_fit('Invalid account {}'.format(user))
@@ -433,7 +444,7 @@ def main(*paras):
                 resources = json.load(f)
         else:
             try:
-                resources, info = get_resources(uid, args.video, args.interval, boundary, token)
+                resources, info = get_resources(uid, args.video, args.interval, boundary)
             except KeyboardInterrupt:
                 quit()
         result = {
