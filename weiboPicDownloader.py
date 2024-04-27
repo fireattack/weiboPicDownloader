@@ -1,15 +1,22 @@
-from functools import reduce
-import sys, platform
-import time, os, json, re, datetime, math, operator
-import concurrent.futures
-import requests
 import argparse
+import concurrent.futures
+import datetime
+import json
+import math
+import operator
+import platform
+import re
+import sys
+import time
+from functools import reduce
 from pathlib import Path
+
 import dateutil.parser
+import requests
 
 if platform.system() == 'Windows':
     if operator.ge(*map(lambda version: list(map(int, version.split('.'))), [platform.version(), '10.0.14393'])):
-        os.system('')
+        pass
     else:
         import colorama
         colorama.init()
@@ -19,62 +26,20 @@ try:
 except:
     pass
 
-parser = argparse.ArgumentParser(
-    prog = 'weiboPicDownloader'
-)
-group = parser.add_mutually_exclusive_group(required = True)
-group.add_argument(
-    '-u', metavar = 'user', dest = 'users', nargs = '+',
-    help = 'specify nickname or id of weibo users'
-)
-group.add_argument(
-    '-f', metavar = 'file', dest = 'files', nargs = '+',
-    help = 'import list of users from files'
-)
-parser.add_argument(
-    '-d', metavar = 'directory', dest = 'directory',
-    help = 'set picture saving path'
-)
-parser.add_argument(
-    '-s', metavar = 'size', dest = 'size',
-    default = 20, type = int,
-    help = 'set size of thread pool'
-)
-parser.add_argument(
-    '-r', metavar = 'retry', dest = 'retry',
-    default = 10, type = int,
-    help = 'set maximum number of retries'
-)
-parser.add_argument(
-    '-i', metavar = 'interval', dest = 'interval',
-    default = 1, type = float,
-    help = 'set interval for feed requests'
-)
-parser.add_argument(
-    '-c', metavar = 'cookie', dest = 'cookie',
-    help = 'set cookie if needed'
-)
-parser.add_argument(
-    '-b', metavar = 'boundary', dest = 'boundary',
-    default = ':',
-    help = 'focus on weibos in the id range'
-)
-parser.add_argument(
-    '-R', metavar = 'resource', dest = 'resource',
-    help = 'use dumped resource'
-)
-parser.add_argument(
-    '-n', metavar = 'name', dest = 'name', default = '{name}',
-    help = 'customize naming format'
-)
-parser.add_argument(
-    '-v', dest = 'video', action = 'store_true',
-    help = 'download videos together'
-)
-parser.add_argument(
-    '-o', dest = 'overwrite', action = 'store_true',
-    help = 'overwrite existing files'
-)
+parser = argparse.ArgumentParser(prog='weiboPicDownloader')
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-', metavar='user', dest='users', nargs='+', help='specify nickname or id of weibo users')
+group.add_argument('-f', metavar='file', dest='files', nargs='+', help='import list of users from files')
+parser.add_argument('-d', metavar='directory', dest='directory', help='set picture saving path')
+parser.add_argument('-s', metavar='size', dest='size',    default=20, type=int,    help='set size of thread pool')
+parser.add_argument('-r', metavar='retry', dest='retry',    default=10, type=int,    help='set maximum number of retries')
+parser.add_argument('-i', metavar='interval', dest='interval',    default=1, type=float,    help='set interval for feed requests')
+parser.add_argument('-c', metavar='cookie', dest='cookie',    help='set cookie if needed')
+parser.add_argument('-b', metavar='boundary', dest='boundary',    default=':',    help='focus on weibos in the id range')
+parser.add_argument('-R', metavar='resource', dest='resource',    help='use dumped resource')
+parser.add_argument('-n', metavar='name', dest='name', default='{name}',    help='customize naming format')
+parser.add_argument('-v', dest='video', action='store_true',    help='download videos together')
+parser.add_argument('-o', dest='overwrite', action='store_true',    help='overwrite existing files')
 
 def nargs_fit(parser, args):
     flags = parser._option_string_actions
@@ -114,7 +79,8 @@ print_fit = Printer().print_fit
 
 def merge(*dicts):
     result = {}
-    for dictionary in dicts: result.update(dictionary)
+    for dictionary in dicts:
+        result.update(dictionary)
     return result
 
 def quit(string = ''):
@@ -237,8 +203,10 @@ def get_resources(uid, video, interval, limit, token):
                     # We check if a post is sticky. Sticky post will NOT be used to when see if we have reached the limit or not;
                     # but will still be processed if within the interval.
                     is_top = False
-                    if mblog.get('isTop', False): is_top = True
-                    if mblog.get('mblogtype', None) == 2: is_top = True
+                    if mblog.get('isTop', False):
+                        is_top = True
+                    if mblog.get('mblogtype', None) == 2:
+                        is_top = True
 
                     mid = int(mblog['mid'])
                     bid = mblog['bid']
@@ -316,22 +284,14 @@ def get_resources(uid, video, interval, limit, token):
         finally:
             time.sleep(interval)
 
-    print_fit('Practically scanned {} weibos, get {} {}'.format(amount, len(resources), 'resources' if video else 'pictures'))
-    # with open(f"json_backup/{uid}.json", "w", encoding='utf-8') as f1:
-    #     json.dump(resources, f1, indent=2, default=json_serial)
+    print_fit('Scanned {} weibos, get {} {}'.format(amount, len(resources), 'resources' if video else 'pictures'))
+
     info['weibos_scanned'] = amount
     info['resources_found'] = len(resources)
     return resources, info
 
-def json_serial(obj):
-    """JSON serializer for objects not serializable by default json code"""
-
-    if isinstance(obj, (datetime.date)):
-        return obj.isoformat()
-    raise TypeError ("Type %s not serializable" % type(obj))
-
 def safeify(s):
-    template = {u'\\': u'＼', u'/': u'／', u':': u'：', u'*': u'＊', u'?': u'？', u'"': u'＂', u'<': u'＜', u'>': u'＞', u'|': u'｜'}
+    template = {'\\': '＼', '/': '／', ':': '：', '*': '＊', '?': '？', '"': '＂', '<': '＜', '>': '＞', '|': '｜', '\r': '', '\n': ''}
     for illegal in template:
         s = s.replace(illegal, template[illegal])
     return s
@@ -366,7 +326,8 @@ def format_name(item, template):
 
 def download(url, path, overwrite):
     path = Path(path)
-    if path.exists() and not overwrite: return True
+    if path.exists() and not overwrite:
+        return True
     try:
         with request_fit('GET', url, stream = True) as response:
             expected_size = int(response.headers['Content-length'])
@@ -375,24 +336,21 @@ def download(url, path, overwrite):
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-        if response.url != url: # default_d_h_large.gif. Retrying doesn't seem to be able to fix it anymore.
-            print_fit(f'[Warning] {url} got redirected to {response.url}. Likely the image is "harmonized".')
-            path_temp = path.with_name(path.stem + '.missing' + path.suffix)
-            path = path.rename(path_temp)
-            # raise Exception(f'{url} got redirected to {response.url}. Re-download...')
         size = path.stat().st_size
         if size != expected_size:
             raise Exception(f'{path.name.split(" ")[-1]}: filesize doesn\'t match header ({expected_size} -> {size}). Re-download...')
+
+        # If the image is directed to something like default_d_h_large.gif,
+        # it means the image is "harmonized" and we rename it to .missing to indicate that.
+        if response.url != url:
+            print_fit(f'[Warning] {url} got redirected to {response.url}. Likely the image is "harmonized".')
+            path_temp = path.with_name(path.stem + '.missing' + path.suffix)
+            path = path.rename(path_temp)
     except Exception as ex:
         print_fit(ex)
+        # remove partially downloaded file if any
         if path.exists():
-            # Keep the borken files just in case.
-            i = 1
-            path_temp = path.with_name(f'[broken {i}]' + path.name)
-            while path_temp.exists():
-                i += 1
-                path_temp = path.with_name(f'[broken {i}]' + path.name)
-            path.rename(path_temp)
+            path.unlink()
         return False
     else:
         return True
