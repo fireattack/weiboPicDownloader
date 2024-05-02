@@ -1,26 +1,31 @@
-# Forked from https://github.com/nondanee/weiboPicDownloader 
+# weiboPicDownloader (fork) ![](https://img.shields.io/badge/python-3.8+-blue.svg)
 
-**中文文档未更新，请参见英文文档**
+**[English README](README.md)**
 
-以下基本保留原始文档未修改，仅做备份
+**微博媒体批量下载器**
 
-# (免)登录下载微博图片 ![](https://img.shields.io/badge/python-3.7+-blue.svg)
+从 https://github.com/nondanee/weiboPicDownloader 分叉而来
 
-批量下载微博用户图片 (CLI)
+主要改进：
 
-只对免登录接口感兴趣的话，直接看 [wiki](https://github.com/nondanee/weiboPicDownloader/wiki) 不用谢
+* 现在可以下载超过 9 张图片的帖子。
+* 现在可以下载高清视频。
+* 在使用名称模板时清理来自微博文本内容的文本。
+* 重构为模块，更容易整合到其他 Python 脚本/项目中。现在返回一个 dict，以显示下载会话中的一些统计数据。
+* 各种 bug 修复。
+
+Breaking 变更：
+
+* 放弃对 Python 2 的支持（只在 3.8 上测试，但应该也适用于更早的一些版本）
+* -b（边界）现在在左侧（较早的日期）不包含在内。这是为了便于更新（因此你可以使用 -b last_checked_bid: 只下载新的帖子而不会有重复下载的情况）。使用特定 mid/bid（而不是范围）的 -b 仍然只会下载该特定单个帖子。
 
 ## 致谢
 
-根源自 Java 项目 [yAnXImIN/weiboPicDownloader](https://github.com/yAnXImIN/weiboPicDownloader)  
+* [nondanee/weiboPicDownloader](https://github.com/nondanee/weiboPicDownloader) (停止维护的原版)
+  * 根源自 Java 项目 [yAnXImIN/weiboPicDownloader](https://github.com/yAnXImIN/weiboPicDownloader)
+  * 也从另一移植项目学到了好多 [ningshu/weiboPicDownloader](https://github.com/ningshu/weiboPicDownloader)
 
-也从另一移植项目学到了好多 [ningshu/weiboPicDownloader](https://github.com/ningshu/weiboPicDownloader) 
-
-非常感谢两位巨巨
-
-## 预览
-
-![](https://user-images.githubusercontent.com/26399680/51592598-fd48b980-1f2a-11e9-9687-4670e7dfcd83.png)
+微博免登录接口相关信息可以参考原 repo 的 [wiki](https://github.com/nondanee/weiboPicDownloader/wiki)
 
 ## 依赖
 
@@ -32,7 +37,7 @@ $ pip install colorama # 仅 Windows 10.0.14393 以下需要
 ## 使用
 
 ```
-$ python weiboPicDownloader.py -h
+$ python .\weiboPicDownloader.py -h
 usage: weiboPicDownloader [-h] (-u user [user ...] | -f file [file ...])
                           [-d directory] [-s size] [-r retry] [-i interval]
                           [-c cookie] [-b boundary] [-n name] [-v] [-o]
@@ -64,12 +69,12 @@ optional arguments:
 - `-r retry` 最大重试次数（默认值：`2`）
 - `-i interval` 请求间隔（默认值：`1`，单位：秒）
 - `-c cookie` 登录凭据 (需要 cookie 中的 `SUB` 值)
-- `-b boundary` 微博 mid/bid 或日期范围（格式：`id:id` 两者之间，`:id` 之前，`id:` 之后，`id` 指定，`:` 全部）
-- `-n name` 命名模板 (标识符: `url`、`index`、`type`、`mid`、`bid`、`date`、`text`、`name`，类似 ["f-Strings"](https://www.python.org/dev/peps/pep-0498/#abstract) 语法)
+- `-b boundary` 微博 mid/bid 或日期范围（格式：`id:id` 两者之间，`:id` 之前，`id:` 之后，`id` 指定，`:` 全部）。日期使用 `@%Y%m%d`（如 `@20220520`）；否则整数会被视为 mid
+- `-n name` 命名模板 (标识符: `url`、`index`、`type`、`mid`、`bid`、`date`、`text`、`name`，`uid` 类似 ["f-Strings"](https://www.python.org/dev/peps/pep-0498/#abstract) 语法)
 - `-v` 同时下载秒拍视频
 - `-o` 重新下载已保存的文件（默认跳过）
 
-✳如何从浏览器中取得 `SUB` 的值（以 Chrome 举例）
+## 如何从浏览器中取得 `SUB` 的值（以 Chrome 举例）
 
 1. 转到 https://m.weibo.cn 并登录
 2. 右键检查 > Application > Cookies > https://m.weibo.cn

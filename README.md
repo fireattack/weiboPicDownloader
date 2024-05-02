@@ -1,9 +1,14 @@
 # weiboPicDownloader (fork) ![](https://img.shields.io/badge/python-3.8+-blue.svg)
 
+**[中文 README](README-CN.md)**
+
+**Weibo media batch downloader**
+
 Forked from https://github.com/nondanee/weiboPicDownloader
 
 Major improvements:
 * Now can download posts with more than 9 pictures.
+* Now can download HD videos.
 * Cleanup text from the Weibo text content when used in name template.
 * Refactored as a module for easier incorporating into other Python scripts/projects. It now returns a list of dict to show some stats from the download session too.
 * Various bug fixes.
@@ -12,21 +17,14 @@ Breaking changes:
 * Dropped Python 2 support (only tested with 3.8, but should work with some earlier versions too)
 * `-b` (boundary) now is NON-inclusive on the left-side (earlier date). This is done to make it easier to update (so you can use `-b last_checked_bid:` to only download new posts without overlapping). `-b` with a specific mid/bid (instead of a range) would still download (always and only) that specific single post.
 
-Weibo user album batch download tool (CLI)
+## Aknowledgements
 
-for more weibo free login APIs, turn to [wiki](https://github.com/nondanee/weiboPicDownloader/wiki)
+* [nondanee/weiboPicDownloader](https://github.com/nondanee/weiboPicDownloader) (original repo, no longer maintained)
+  * [yAnXImIN/weiboPicDownloader](https://github.com/yAnXImIN/weiboPicDownloader)
+  * [ningshu/weiboPicDownloader](https://github.com/ningshu/weiboPicDownloader)
 
-~~**[中文 README](README-CN.md)**~~ (未更新)
+ for more info about Weibo's APIs, check original repo's [wiki](https://github.com/nondanee/weiboPicDownloader/wiki)
 
-## References
-
-* [nondanee/weiboPicDownloader](https://github.com/nondanee/weiboPicDownloader) (original repo)
-* [yAnXImIN/weiboPicDownloader](https://github.com/yAnXImIN/weiboPicDownloader)
-* [ningshu/weiboPicDownloader](https://github.com/ningshu/weiboPicDownloader)
-
-## Overview
-
-![](https://user-images.githubusercontent.com/26399680/51592598-fd48b980-1f2a-11e9-9687-4670e7dfcd83.png)
 
 ## Dependencies
 
