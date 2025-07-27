@@ -41,6 +41,8 @@ parser.add_argument('-n', metavar='name', dest='name', default='{name}',    help
 parser.add_argument('-v', dest='video', action='store_true', help='download videos together')
 parser.add_argument('-o', dest='overwrite', action='store_true', help='overwrite existing files')
 
+
+UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
 session = requests.Session()
 session_visitor = None
 
@@ -180,7 +182,7 @@ def get_hd_video(bid):
 
     url = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
     print_fit(f'[Info] Try to get potentially higher quality video from {url}')
-    with session_visitor.get(url) as r:
+    with session_visitor.get(url, headers={'User-Agent': UA}, timeout=10) as r:
         ajax_data = r.json()
         videos = [(
             playback['play_info']["width"],
@@ -212,14 +214,14 @@ def get_resources(uid, video, interval, limit):
     while empty < aware and not exceed:
         try:
             url = 'https://m.weibo.cn/api/container/getIndex?count={}&page={}&containerid=107603{}'.format(size, page, uid)
-            response = session.get(url)
+            response = session.get(url, headers={'User-Agent': UA}, timeout=10)
             assert response.status_code != 418
             json_data = json.loads(response.text)
         except AssertionError:
             print_fit('punished by anti-scraping mechanism (#{})'.format(page), pin = True)
             empty = aware
-        except Exception:
-            pass
+        except Exception as ex:
+            print_fit(f'[Error] {ex}', pin = True)
         else:
             empty = empty + 1 if json_data['ok'] == 0 else 0
             if total == 0 and 'cardlistInfo' in json_data['data']: total = json_data['data']['cardlistInfo']['total']
