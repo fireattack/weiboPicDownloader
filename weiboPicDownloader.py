@@ -101,7 +101,6 @@ def initialize_weibo_com_session():
         print(f'[Error] Failed to get visitor data: {r.text}')
         raise ValueError('Failed to get visitor data.')
 
-    # print(session_weibo_com.cookies.get_dict())  # Debug: show cookies (disabled for safety)
     tid = visitor_data.get('tid', '')
     new_tid = visitor_data.get('new_tid', False)
     confidence = visitor_data.get('confidence', 100)
@@ -170,18 +169,18 @@ def quit(string = ''):
 
 def confirm(message):
     while True:
-        answer = input('{} [Y/n] '.format(message)).strip()
+        answer = input(f'{message} [Y/n] ').strip()
         if answer == 'y' or answer == 'Y':
             return True
         elif answer == 'n' or answer == 'N':
             return False
         print_fit('unexpected answer')
 
-def progress(part, whole, percent = False):
+def progress(part, whole, percent=False):
     if percent:
-        return '{}/{}({}%)'.format(part, whole, int(float(part) / whole * 100))
+        return f'{part}/{whole}({int(float(part) / whole * 100)}%)'
     else:
-        return '{}/{}'.format(part, whole)
+        return f'{part}/{whole}'
 
 def read_from_file(path):
     try:
@@ -192,7 +191,7 @@ def read_from_file(path):
 
 def nickname_to_uid(nickname):
     # TODO: check if this API can be still accessed
-    url = 'https://m.weibo.cn/n/{}'.format(nickname)
+    url = f'https://m.weibo.cn/n/{nickname}'
     response = session_anonymous.get(url)
     if re.search(r'/u/\d{10}$', response.url):
         return response.url[-10:]
@@ -200,7 +199,7 @@ def nickname_to_uid(nickname):
         return
 
 def uid_to_nickname(uid):
-    url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value={}'.format(uid)
+    url = f'https://m.weibo.cn/api/container/getIndex?type=uid&value={uid}'
     response = session_weibo_cn.get(url, timeout=10)
     try:
         return json.loads(response.text)['data']['userInfo']['screen_name']
@@ -249,7 +248,7 @@ def get_hd_video(bid):
     if session_weibo_com is None:
         initialize_weibo_com_session()
 
-    url = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
+    url = f'https://weibo.com/ajax/statuses/show?id={bid}' # mid also works
     print_fit(f'[Info] Try to get higher quality video from {url} ...', end='')
     with session_weibo_com.get(url, headers={'Referer': 'https://weibo.com/'}, timeout=10) as r:
         ajax_data = r.json()
@@ -265,7 +264,7 @@ def get_hd_video(bid):
             videos.sort(reverse=True)
             best = videos[0]
             video_url = best[3]
-            print(f'[Info] best video: {best[0]}x{best[1]}, {best[2]/1024:.0f}kbps')
+            print_fit(f' best video: {best[0]}x{best[1]}, {best[2]/1024:.0f}kbps')
             return video_url
 
 def get_resources(uid, video, interval, limit):
@@ -282,15 +281,15 @@ def get_resources(uid, video, interval, limit):
 
     while empty < aware and not exceed:
         try:
-            url = 'https://m.weibo.cn/api/container/getIndex?count={}&page={}&containerid=107603{}'.format(size, page, uid)
+            url = f'https://m.weibo.cn/api/container/getIndex?count={size}&page={page}&containerid=107603{uid}'
             response = session_weibo_cn.get(url, timeout=10)
             assert response.status_code != 418
             json_data = json.loads(response.text)
         except AssertionError:
-            print_fit('punished by anti-scraping mechanism (#{})'.format(page), pin = True)
+            print_fit(f'punished by anti-scraping mechanism (#{page})', pin=True)
             empty = aware
         except Exception as ex:
-            print_fit(f'[Error] {ex}', pin = True)
+            print_fit(f'[Error] {ex}', pin=True)
         else:
             empty = empty + 1 if json_data['ok'] == 0 else 0
             if total == 0 and 'cardlistInfo' in json_data['data']: total = json_data['data']['cardlistInfo']['total']
@@ -358,12 +357,12 @@ def get_resources(uid, video, interval, limit):
                         else:
                             print_fit(f'[Error] Cannot get video url for {bid}')
 
-            print_fit('{} {}(#{})'.format('Analysing weibos...' if empty < aware and not exceed else 'Finish analysis', progress(amount, total), page), pin = True)
+            print_fit(f"{'Analysing weibos...' if empty < aware and not exceed else 'Finish analysis'} {progress(amount, total)}(#{page})", pin=True)
             page += 1
         finally:
             time.sleep(interval)
 
-    print_fit('Scanned {} weibos, get {} {}'.format(amount, len(resources), 'resources' if video else 'pictures'))
+    print_fit(f'Scanned {amount} weibos, get {len(resources)} {"resources" if video else "pictures"}')
 
     info['weibos_scanned'] = amount
     info['resources_found'] = len(resources)
@@ -455,7 +454,7 @@ def main(*paras):
         base = Path(args.directory)
         if base.exists():
             if not base.is_dir(): quit('Saving path is not a directory')
-        elif confirm('Directory "{}" doesn\'t exist, help to create?'.format(base)):
+        elif confirm(f'Directory "{base}" doesn\'t exist, help to create?'):
             base.mkdir()
         else:
             quit('Do it youself :)')
@@ -478,7 +477,7 @@ def main(*paras):
                 boundary[0] = boundary[0] - datetime.timedelta(days = 1)
         if type(boundary[0]) == type(boundary[1]): assert boundary[0] <= boundary[1]
     except:
-        quit('invalid id range {}'.format(args.boundary))
+        quit(f'invalid id range {args.boundary}')
 
     if args.cookie:
         session_anonymous.cookies.update({'SUB': args.cookie})
@@ -489,7 +488,7 @@ def main(*paras):
 
     for number, user in enumerate(users, 1):
 
-        print_fit('{}/{} {}'.format(number, len(users), time.ctime()))
+        print_fit(f'{number}/{len(users)} {time.ctime()}')
 
         if re.search(r'^\d{10}$', user):
             nickname = uid_to_nickname(user)
@@ -499,14 +498,14 @@ def main(*paras):
             uid = nickname_to_uid(user)
 
         if not uid:
-            print_fit('Invalid account {}'.format(user))
+            print_fit(f'Invalid account {user}')
             print_fit('-' * 30)
             continue
 
         if not nickname:
             nickname = f'({uid})'
 
-        print_fit('{} {}'.format(nickname, uid))
+        print_fit(f'{nickname} {uid}')
 
         if args.resource:
             with open(args.resource, 'r', encoding='utf-8') as f:
@@ -533,8 +532,8 @@ def main(*paras):
         retry = 0
         while resources and retry <= args.retry:
 
-            if retry > 0: print_fit('Automatic retry {}'.format(retry))
-
+            if retry > 0:
+                print_fit(f'Automatic retry {retry}')
             total = len(resources)
             tasks = []
             done = 0
@@ -560,20 +559,20 @@ def main(*paras):
                     cancel = True
                 finally:
                     if not cancel:
-                        print_fit('{} {}'.format(
-                            'Downloading...' if done != total else 'All tasks done',
-                            progress(done, total, True)
-                        ), pin = True)
+                        print_fit(
+                            f"{'Downloading...' if done != total else 'All tasks done'} {progress(done, total, True)}",
+                            pin=True
+                        )
                     else:
-                        print_fit('waiting for cancellation... ({})'.format(total - done), pin = True)
+                        print_fit(f'waiting for cancellation... ({total - done})', pin=True)
 
             if cancel: quit()
-            print_fit('Success {}, failure {}, total {}'.format(total - len(failed), len(failed), total))
+            print_fit(f'Success {total - len(failed)}, failure {len(failed)}, total {total}')
 
             resources = [resources[index] for index in failed]
             retry += 1
 
-        for resource in resources: print_fit('{} {} failed'.format(resource['url'], format_name(resource, args.name)))
+        for resource in resources: print_fit(f'{resource["url"]} {format_name(resource, args.name)} failed')
         print_fit('-' * 30)
         results.append(result)
     print_fit('Done!')
