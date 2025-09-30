@@ -6,6 +6,7 @@ import math
 import operator
 import platform
 import re
+import random
 import sys
 import time
 from functools import reduce
@@ -43,8 +44,80 @@ parser.add_argument('-o', dest='overwrite', action='store_true', help='overwrite
 
 
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
-session = requests.Session()
-session_visitor = None
+session_anonymous = requests.Session()
+session_weibo_cn = None
+session_weibo_com = None
+
+
+def initialize_visitor_session():
+    global session_weibo_cn
+
+    print('[Info] Initialize a visitor session for weibo.cn for API endpoints.')
+    session_weibo_cn = requests.Session()
+    DATA = {
+        'cb': 'visitor_gray_callback',
+        'tid': '',
+        'from': 'weibo'
+    }
+    r = session_weibo_cn.post('https://visitor.passport.weibo.cn/visitor/genvisitor2', data=DATA)
+    match = re.search(r'visitor_gray_callback\((\{.*\})\);', r.text)
+    if match:
+        visitor_data = match.group(1)
+        visitor_data = json.loads(visitor_data).get('data', {})
+    else:
+        print(f'[Error] Failed to get visitor data: {r.text}')
+        raise ValueError('Failed to get visitor data.')
+
+    sub = visitor_data.get('sub')
+    subp = visitor_data.get('subp')
+
+    if sub and subp:
+        session_weibo_cn.cookies.set('SUB', sub, domain='.weibo.cn')
+        session_weibo_cn.cookies.set('SUBP', subp, domain='.weibo.cn')
+    else:
+        raise Exception('[Error] Failed to get visitor cookies.')
+
+def initialize_weibo_com_session():
+    # Ref:
+    # https://github.com/yt-dlp/yt-dlp/blob/d925e92b710153d0d51d030f115b3c87226bc0f0/yt_dlp/extractor/weibo.py#L24
+    global session_weibo_com
+
+    print('[Info] Initialize a visitor session for weibo.com for HD (>720p) video.')
+    session_weibo_com = requests.Session()
+    session_weibo_com.headers.update({"User-Agent": UA})
+    r = session_weibo_com.post(
+        'https://passport.weibo.com/visitor/genvisitor',
+        data={
+            'cb': 'gen_callback',
+            'fp': '{"os":"1","browser":"Chrome140,0,0,0","fonts":"undefined","screenInfo":"1920*1080*24","plugins":""}'
+        }
+    )
+    # 'window.gen_callback && gen_callback({"retcode":20000000,"msg":"succ","data":{"tid":"01AVnbdu31T2260cpRnxmRjpH48iI64qeux7YqiGnXZ1xJ","new_tid":false,"confidence":90}});'
+    match = re.search(r'gen_callback\((\{.*\})\);', r.text)
+    if match:
+        visitor_data = match.group(1)
+        visitor_data = json.loads(visitor_data).get('data', {})
+    else:
+        print(f'[Error] Failed to get visitor data: {r.text}')
+        raise ValueError('Failed to get visitor data.')
+
+    # print(session_weibo_com.cookies.get_dict())  # Debug: show cookies (disabled for safety)
+    tid = visitor_data.get('tid', '')
+    new_tid = visitor_data.get('new_tid', False)
+    confidence = visitor_data.get('confidence', 100)
+    session_weibo_com.get(
+        'https://passport.weibo.com/visitor/visitor',
+        params={
+            'a': 'incarnate',
+            't': tid,
+            'w': 3 if new_tid else 2,
+            'c': f'{confidence:03d}',
+            'gc': '',
+            'cb': 'cross_domain',
+            'from': 'weibo',
+            '_rand': random.random(),
+        }
+    )
 
 def nargs_fit(parser, args):
     flags = parser._option_string_actions
@@ -70,14 +143,17 @@ class Printer():
     def __init__(self):
         self.pinned = False
 
-    def print_fit(self, string, pin=False):
+    def print_fit(self, string, pin=False, *args, **kwargs):
         if pin == True:
-            print(f'\r\033[K{string}', end='')
+            if self.pinned:
+                print(f'\r\033[K{string}', end='')
+            else:
+                print(string, end='')
             self.pinned = True
         else:
             if self.pinned:
                 print()
-            print(string)
+            print(string, *args, **kwargs)
             self.pinned = False
 
 print_fit = Printer().print_fit
@@ -115,8 +191,9 @@ def read_from_file(path):
         quit(str(e))
 
 def nickname_to_uid(nickname):
+    # TODO: check if this API can be still accessed
     url = 'https://m.weibo.cn/n/{}'.format(nickname)
-    response = session.get(url)
+    response = session_anonymous.get(url)
     if re.search(r'/u/\d{10}$', response.url):
         return response.url[-10:]
     else:
@@ -124,7 +201,7 @@ def nickname_to_uid(nickname):
 
 def uid_to_nickname(uid):
     url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value={}'.format(uid)
-    response = session.get(url)
+    response = session_weibo_cn.get(url, timeout=10)
     try:
         return json.loads(response.text)['data']['userInfo']['screen_name']
     except:
@@ -169,20 +246,12 @@ def compare(standard, operation, candidate):
             pass
 
 def get_hd_video(bid):
-    global session_visitor
-    if session_visitor is None:
-        print('[Info] Initialize a visitor session to use /statuses API endpoint to get higher quality video.')
-        session_visitor = requests.Session()
-        DATA = {
-            'cb': 'visitor_gray_callback',
-            'tid': '',
-            'from': 'weibo'
-        }
-        session_visitor.post('https://passport.weibo.com/visitor/genvisitor2', data=DATA)
+    if session_weibo_com is None:
+        initialize_weibo_com_session()
 
     url = 'https://weibo.com/ajax/statuses/show?id={}'.format(bid)
-    print_fit(f'[Info] Try to get potentially higher quality video from {url}')
-    with session_visitor.get(url, headers={'User-Agent': UA}, timeout=10) as r:
+    print_fit(f'[Info] Try to get higher quality video from {url} ...', end='')
+    with session_weibo_com.get(url, headers={'Referer': 'https://weibo.com/'}, timeout=10) as r:
         ajax_data = r.json()
         videos = [(
             playback['play_info']["width"],
@@ -214,7 +283,7 @@ def get_resources(uid, video, interval, limit):
     while empty < aware and not exceed:
         try:
             url = 'https://m.weibo.cn/api/container/getIndex?count={}&page={}&containerid=107603{}'.format(size, page, uid)
-            response = session.get(url, headers={'User-Agent': UA}, timeout=10)
+            response = session_weibo_cn.get(url, timeout=10)
             assert response.status_code != 418
             json_data = json.loads(response.text)
         except AssertionError:
@@ -254,25 +323,22 @@ def get_resources(uid, video, interval, limit):
                     if not is_top and compare(limit[0], '>=', [mid, date]): exceed = True
                     if compare(limit[0], '>=', [mid, date]) or compare(limit[1], '<', [mid, date]): continue
                     amount += 1 # only count if not skipped
+                    blog_url = card['scheme']
+                    weibo_cn_url = f'https://m.weibo.cn/statuses/show?id={bid}'
+
                     if 'pics' in mblog:
                         if mblog['pic_num'] > 9:  # More than 9 images
-                            blog_url = card['scheme']
-                            print_fit(f'[Info] Find more than 9 pictures for {blog_url}')
-                            with session.get(blog_url) as r:
-                                m = re.search(r'var \$render_data = \[(.+)\]\[0\] \|\| {};', r.text, flags=re.DOTALL)
-                                if not m:
-                                    print_fit('[Error] Cannot parse post. Try to set cookie uisng `-c`.')
-                                else:
-                                    my_json = json.loads(m[1])
-                                    pics = my_json['status']['pics']
+                            print_fit(f'[Info] Find more than 9 pictures for {blog_url} ...', end='')
+                            with session_weibo_cn.get(weibo_cn_url, headers={'User-Agent': UA, 'referer': blog_url}, timeout=10) as r:
+                                pics = r.json()["data"]["pics"]
+                                print_fit(f' got {len(pics)} pictures.')
                         else:
                             pics = mblog['pics']
                         for index, pic in enumerate(pics, 1):
                             if 'large' in pic:
                                 resources.append(merge({'url': pic['large']['url'], 'index': index, 'type': 'photo'}, mark))
-                    elif video and 'page_info' in mblog:
+                    elif video and 'page_info' in mblog and mblog['page_info'].get('type', '') == 'video':
                         video_url = None
-                        # try to get 1080p video from another API endpoint
                         try:
                             video_url = get_hd_video(bid)
                         except Exception as e:
@@ -342,7 +408,7 @@ def download(url, path, overwrite):
     if path.exists() and not overwrite:
         return True
     try:
-        with session.get(url, stream=True) as response:
+        with session_anonymous.get(url, stream=True, timeout=10) as response:
             expected_size = int(response.headers['Content-length'])
             assert expected_size > 0 and response.status_code == 200
             with open(path, 'wb') as f:
@@ -415,9 +481,10 @@ def main(*paras):
         quit('invalid id range {}'.format(args.boundary))
 
     if args.cookie:
-        session.cookies.update({'SUB': args.cookie})
+        session_anonymous.cookies.update({'SUB': args.cookie})
     pool = concurrent.futures.ThreadPoolExecutor(max_workers = args.size)
 
+    initialize_visitor_session()
     results = []
 
     for number, user in enumerate(users, 1):
