@@ -43,7 +43,7 @@ parser.add_argument('-v', dest='video', action='store_true', help='download vide
 parser.add_argument('-o', dest='overwrite', action='store_true', help='overwrite existing files')
 
 
-UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
+UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 session_anonymous = requests.Session()
 session_weibo_cn = None
 session_weibo_com = None
@@ -54,6 +54,7 @@ def initialize_visitor_session():
 
     print('[Info] Initialize a visitor session for weibo.cn for API endpoints.')
     session_weibo_cn = requests.Session()
+    session_weibo_cn.headers.update({"User-Agent": UA})
     DATA = {
         'cb': 'visitor_gray_callback',
         'tid': '',
